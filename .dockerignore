@@ -1,0 +1,14 @@
+.dockerignore
+.env
+.env.sample
+.git
+.github
+.npmignore
+.nyc_output
+.prettierignore
+build
+Dockerfile
+LICENSE
+node_modules
+npm-debug.log
+README.md
