@@ -9,21 +9,24 @@ export class Autoscaler {
   private k8sApi = new Client({ config: config.getInCluster() });
   private lastScaleUpTime = new Date().getTime();
   private lastScaleDownTime = new Date().getTime();
-  private options: {[key: string]: any};
+  private options: { [key: string]: any };
 
-  constructor(options: {[key: string]: any}) {
+  constructor(options: { [key: string]: any }) {
     this.options = options;
   }
 
   public init() {
-    console.log(`Initializing autoscaler with options: ${JSON.stringify(this.options)}`);
+    console.log(
+      `Initializing autoscaler with options: ${JSON.stringify(this.options)}`
+    );
     this.poll();
   }
 
   private async getMessageCount(): Promise<number> {
     try {
-      return await got.get(this.options.queueUrl, { json: true })
-      .then(response => response.body.payload);
+      return await got
+        .get(this.options.queueUrl, { json: true })
+        .then(response => response.body.payload);
     } catch (err) {
       console.error(`Failed to get message count: ${err.message}`);
       return null;
@@ -55,7 +58,7 @@ export class Autoscaler {
           }
         }
       }
-    }, 20000)
+    }, this.options.pollPeriod || 20000);
   }
 
   private async scaleUp() {
@@ -64,7 +67,7 @@ export class Autoscaler {
     if (deployment) {
       if (deployment.spec.replicas < this.options.maxPods) {
         console.log('Scaling up');
-        deployment.spec.replicas +=1;
+        deployment.spec.replicas += 1;
         await this.updateDeployment(deployment);
       } else if (deployment.spec.replicas > this.options.maxPods) {
         await this.scaleDown();
@@ -80,7 +83,7 @@ export class Autoscaler {
     if (deployment) {
       if (deployment.spec.replicas > this.options.minPods) {
         console.log('Scaling down');
-        deployment.spec.replicas -=1;
+        deployment.spec.replicas -= 1;
         await this.updateDeployment(deployment);
       } else if (deployment.spec.replicas < this.options.minPods) {
         await this.scaleUp();
@@ -93,9 +96,12 @@ export class Autoscaler {
   private async getDeployment() {
     try {
       console.log('Getting deployment');
-      const deploymentResponse = await this.k8sApi.apis.apps.v1.namespaces(this.options.k8sNamespace).deployments(this.options.k8sDeployment).get();
+      const deploymentResponse = await this.k8sApi.apis.apps.v1
+        .namespaces(this.options.k8sNamespace)
+        .deployments(this.options.k8sDeployment)
+        .get();
       return deploymentResponse.body;
-    } catch(err) {
+    } catch (err) {
       console.error(`Failed to get deployment: ${JSON.stringify(err)}`);
       return null;
     }
@@ -104,8 +110,13 @@ export class Autoscaler {
   private async updateDeployment(deployment: any) {
     try {
       console.log('Updating deployment');
-      const updateResponse = await this.k8sApi.apis.apps.v1.namespaces(this.options.k8sNamespace).deployments(this.options.k8sDeployment).patch({ body: deployment });
-      console.log(`Deployment updated. Response: ${JSON.stringify(updateResponse)}`);
+      const updateResponse = await this.k8sApi.apis.apps.v1
+        .namespaces(this.options.k8sNamespace)
+        .deployments(this.options.k8sDeployment)
+        .patch({ body: deployment });
+      console.log(
+        `Deployment updated. Response: ${JSON.stringify(updateResponse)}`
+      );
     } catch (err) {
       console.error(`Failed to update deployment: ${JSON.stringify(err)}`);
     }
