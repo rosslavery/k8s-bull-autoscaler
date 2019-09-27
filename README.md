@@ -26,8 +26,7 @@ spec:
             - --poll-period=10000
             - --scale-down-wait=60000
             - --scale-up-wait=60000
-            - --scale-up-messages=1500
-            - --scale-down-messages=300
+            - --messages-per-pod=300
             - --min-pods=1
             - --max-pods=5
 ```
