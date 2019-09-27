@@ -31,16 +31,10 @@ const program = commander
     10000
   )
   .option(
-    '--scale-up-messages <count>',
-    'Number of messages in the queue before scaling up',
+    '--messages-per-pod <count>',
+    'Number of messages per worker',
     commanderParseInt,
     50
-  )
-  .option(
-    '--scale-down-messages <count>',
-    'Number of messages in the queue before scaling down',
-    commanderParseInt,
-    10
   )
   .option(
     '--max-pods <count>',

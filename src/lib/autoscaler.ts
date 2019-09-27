@@ -10,6 +10,7 @@ export class Autoscaler {
   private lastScaleUpTime = new Date().getTime();
   private lastScaleDownTime = new Date().getTime();
   private options: { [key: string]: any };
+  private messageCount: number = 0;
 
   constructor(options: { [key: string]: any }) {
     this.options = options;
@@ -35,12 +36,12 @@ export class Autoscaler {
 
   private poll() {
     setInterval(async () => {
-      const messageCount = await this.getMessageCount();
+      this.messageCount = await this.getMessageCount();
 
-      if (typeof messageCount === 'number') {
+      if (typeof this.messageCount === 'number') {
         const now = new Date().getTime();
 
-        if (messageCount >= this.options.scaleUpMessages) {
+        if (this.messageCount >= this.options.messagesPerPod) {
           if (now - this.lastScaleUpTime > this.options.scaleUpWait) {
             await this.scaleUp();
             this.lastScaleUpTime = now;
@@ -49,7 +50,7 @@ export class Autoscaler {
           }
         }
 
-        if (messageCount <= this.options.scaleDownMessages) {
+        if (this.messageCount <= this.options.messagesPerPod) {
           if (now - this.lastScaleDownTime > this.options.scaleDownWait) {
             await this.scaleDown();
             this.lastScaleDownTime = now;
@@ -66,8 +67,16 @@ export class Autoscaler {
 
     if (deployment) {
       if (deployment.spec.replicas < this.options.maxPods) {
+        let newReplicas = Math.ceil(
+          this.messageCount / this.options.messagesPerPod
+        );
+
+        if (newReplicas > this.options.maxPods) {
+          newReplicas = this.options.maxPods;
+        }
+
         console.log('Scaling up');
-        deployment.spec.replicas += 1;
+        deployment.spec.replicas = newReplicas;
         await this.updateDeployment(deployment);
       } else if (deployment.spec.replicas > this.options.maxPods) {
         await this.scaleDown();
@@ -82,8 +91,16 @@ export class Autoscaler {
 
     if (deployment) {
       if (deployment.spec.replicas > this.options.minPods) {
+        let newReplicas = Math.ceil(
+          this.messageCount / this.options.messagesPerPod
+        );
+
+        if (newReplicas < this.options.minPods) {
+          newReplicas = this.options.minPods;
+        }
+
         console.log('Scaling down');
-        deployment.spec.replicas -= 1;
+        deployment.spec.replicas = newReplicas;
         await this.updateDeployment(deployment);
       } else if (deployment.spec.replicas < this.options.minPods) {
         await this.scaleUp();
