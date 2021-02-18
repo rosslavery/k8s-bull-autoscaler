@@ -11,12 +11,13 @@
     "no-var-keyword": true,
     "no-parameter-reassignment": true,
     "typedef": [false, "call-signature"],
+    "no-submodule-imports": false,
 
     // Immutability rules
     "readonly-keyword": false,
     "readonly-array": true,
     "no-let": false,
-    "no-object-mutation": true,
+    "no-object-mutation": false,
     "no-delete": true,
     "no-method-signature": true,
     "no-console": false,

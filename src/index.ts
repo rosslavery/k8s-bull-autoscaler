@@ -9,9 +9,13 @@ const commanderParseInt = (value: string) => {
 };
 
 const program = commander
-  .option('--queue-url <url>', 'Queue Count URL')
-  .option('--k8s-deployment <deployment>', 'Kubernetes Deployment Name')
-  .option('--k8s-namespace <namespace>', 'Kubernetes Namespace', 'default')
+  .requiredOption('--queue-url <url>', 'Queue Count URL')
+  .requiredOption('--k8s-deployment <deployment>', 'Kubernetes Deployment Name')
+  .requiredOption(
+    '--k8s-namespace <namespace>',
+    'Kubernetes Namespace',
+    'default'
+  )
   .option(
     '--poll-period <time>',
     'How often to poll the queue',
