@@ -65,7 +65,9 @@ export class Autoscaler {
             !this.lastScaleTime ||
             now - this.lastScaleTime > this.options.scaleWait
           ) {
-            await this.scaleUp();
+            if (this.replicasCount < this.options.maxPods) {
+              await this.scaleUp();
+            }
           } else {
             console.log('Waiting for scale up cooldown');
           }
@@ -82,7 +84,9 @@ export class Autoscaler {
             !this.lastScaleTime ||
             now - this.lastScaleTime > this.options.scaleWait
           ) {
-            await this.scaleDown();
+            if (this.replicasCount > this.options.minPods) {
+              await this.scaleDown();
+            }
           } else {
             console.log('Waiting for scale down cooldown');
           }
