@@ -3,6 +3,7 @@
 import commander from 'commander';
 
 import { Autoscaler } from './lib/autoscaler';
+import { AutoScalerOptions } from './types/options.interface';
 
 const commanderParseInt = (value: string) => {
   return parseInt(value, 10);
@@ -23,14 +24,8 @@ const program = commander
     10000
   )
   .option(
-    '--scale-down-wait <time>',
-    'Time to wait after scaling down',
-    commanderParseInt,
-    10000
-  )
-  .option(
-    '--scale-up-wait <time>',
-    'Time to wait after scaling up',
+    '--scale-wait <time>',
+    'Time to wait between scaling attempts',
     commanderParseInt,
     10000
   )
@@ -53,6 +48,6 @@ const program = commander
     1
   );
 
-const options = program.parse(process.argv).opts();
+const options = program.parse(process.argv).opts() as AutoScalerOptions;
 
 new Autoscaler(options).init();

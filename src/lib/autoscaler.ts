@@ -1,16 +1,16 @@
 import * as k8s from '@kubernetes/client-node';
 import got from 'got';
+import { AutoScalerOptions } from '../types/options.interface';
 
 export class Autoscaler {
   private config: k8s.KubeConfig;
   private k8sApi: k8s.AppsV1Api;
-  private lastScaleUpTime: number;
-  private lastScaleDownTime: number;
-  private options: { [key: string]: any };
+  private lastScaleTime: number;
+  private options: AutoScalerOptions;
   private messageCount: number = 0;
   private replicasCount: number;
 
-  constructor(options: { [key: string]: any }) {
+  constructor(options: AutoScalerOptions) {
     this.config = new k8s.KubeConfig();
     this.config.loadFromCluster();
     this.k8sApi = this.config.makeApiClient(k8s.AppsV1Api);
@@ -62,8 +62,8 @@ export class Autoscaler {
           (this.messageCount && this.replicasCount === 0)
         ) {
           if (
-            !this.lastScaleUpTime ||
-            now - this.lastScaleUpTime > this.options.scaleUpWait
+            !this.lastScaleTime ||
+            now - this.lastScaleTime > this.options.scaleWait
           ) {
             await this.scaleUp();
           } else {
@@ -79,8 +79,8 @@ export class Autoscaler {
           (!this.messageCount && this.replicasCount > 0)
         ) {
           if (
-            !this.lastScaleDownTime ||
-            now - this.lastScaleDownTime > this.options.scaleDownWait
+            !this.lastScaleTime ||
+            now - this.lastScaleTime > this.options.scaleWait
           ) {
             await this.scaleDown();
           } else {
@@ -95,7 +95,6 @@ export class Autoscaler {
 
   private async scaleUp(): Promise<void> {
     const deployment = await this.getDeployment();
-    const now = new Date().getTime();
 
     if (deployment) {
       if (deployment.spec.replicas < this.options.maxPods) {
@@ -112,8 +111,7 @@ export class Autoscaler {
         await this.updateDeployment(deployment);
 
         this.replicasCount = newReplicas;
-        this.lastScaleUpTime = now;
-        this.lastScaleDownTime = null;
+        this.lastScaleTime = new Date().getTime();
       } else if (deployment.spec.replicas > this.options.maxPods) {
         await this.scaleDown();
       } else {
@@ -124,7 +122,6 @@ export class Autoscaler {
 
   private async scaleDown(): Promise<void> {
     const deployment = await this.getDeployment();
-    const now = new Date().getTime();
 
     if (deployment) {
       if (deployment.spec.replicas > this.options.minPods) {
@@ -141,8 +138,7 @@ export class Autoscaler {
         await this.updateDeployment(deployment);
 
         this.replicasCount = newReplicas;
-        this.lastScaleDownTime = now;
-        this.lastScaleUpTime = null;
+        this.lastScaleTime = new Date().getTime();
       } else if (deployment.spec.replicas < this.options.minPods) {
         await this.scaleUp();
       } else {
