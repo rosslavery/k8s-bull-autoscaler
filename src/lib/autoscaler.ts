@@ -9,6 +9,7 @@ export class Autoscaler {
   private options: AutoScalerOptions;
   private messageCount: number = 0;
   private replicasCount: number;
+  private isScaling: boolean = false;
 
   constructor(options: AutoScalerOptions) {
     this.config = new k8s.KubeConfig();
@@ -17,166 +18,206 @@ export class Autoscaler {
     this.options = options;
   }
 
+  /**
+   * Initialize the autoscaler
+   */
   public init() {
     console.log(
-      `Initializing autoscaler with options: ${JSON.stringify(this.options)}`
+      `[init] Initializing autoscaler with options: ${JSON.stringify(
+        this.options
+      )}`
     );
     this.poll();
   }
 
-  private async getMessageCount(): Promise<number> {
+  /**
+   * Stores the latest message count from the configured URL
+   */
+  private async updateMessageCount(): Promise<void> {
     try {
-      return await got
+      const messageCount: number = await got
         .get(this.options.queueUrl)
         .json()
         .then((body: any) => body.payload);
+      console.log(`[getMessageCount] Got message count: ${messageCount}`);
+
+      if (typeof messageCount !== 'number') {
+        throw new Error(
+          `Unexpected message count type. Expected number received ${typeof messageCount}`
+        );
+      } else {
+        this.messageCount = messageCount;
+      }
     } catch (err) {
-      console.error(`Failed to get message count: ${err.message}`);
-      return null;
+      console.error(
+        `[getMessageCount] Failed to get message count: ${err.message}`
+      );
     }
   }
 
-  private async getReplicasCount(): Promise<number> {
-    const deployment = await this.getDeployment();
-
-    return deployment.spec.replicas;
-  }
-
+  /**
+   * Stores the latest replica count from the configured deployment
+   */
   private async updateReplicasCount(): Promise<void> {
-    this.replicasCount = await this.getReplicasCount();
+    const deployment = await this.getDeployment();
+    this.replicasCount = deployment.spec.replicas;
   }
 
+  /**
+   * Polls message count and replica count to scale as needed
+   */
   private async poll() {
     await this.updateReplicasCount();
 
-    setInterval(() => this.updateReplicasCount(), 60000);
+    setInterval(
+      () => this.updateReplicasCount(),
+      this.options.deploymentPollPeriod || 60000
+    );
 
     setInterval(async () => {
-      this.messageCount = await this.getMessageCount();
-
-      if (typeof this.messageCount === 'number') {
-        const now = new Date().getTime();
-
-        if (
-          this.messageCount >= this.options.messagesPerPod ||
-          (this.messageCount && this.replicasCount === 0)
-        ) {
-          if (
-            !this.lastScaleTime ||
-            now - this.lastScaleTime > this.options.scaleWait
-          ) {
-            if (this.replicasCount < this.options.maxPods) {
-              await this.scaleUp();
-            }
-          } else {
-            console.log('Waiting for scale up cooldown');
-          }
-
-          return;
-        }
-
-        if (
-          (this.messageCount <= this.options.messagesPerPod &&
-            this.options.minPods > 0) ||
-          (!this.messageCount && this.replicasCount > 0)
-        ) {
-          if (
-            !this.lastScaleTime ||
-            now - this.lastScaleTime > this.options.scaleWait
-          ) {
-            if (this.replicasCount > this.options.minPods) {
-              await this.scaleDown();
-            }
-          } else {
-            console.log('Waiting for scale down cooldown');
-          }
-
-          return;
-        }
-      }
+      await this.updateMessageCount();
+      await this.scale();
     }, this.options.pollPeriod || 20000);
   }
 
-  private async scaleUp(): Promise<void> {
-    const deployment = await this.getDeployment();
+  /**
+   * Scales the deployment to a new replica count if needed
+   */
+  private async scale(): Promise<void> {
+    if (!this.isScaling) {
+      const now = new Date().getTime();
 
-    if (deployment) {
-      if (deployment.spec.replicas < this.options.maxPods) {
-        let newReplicas = Math.ceil(
-          this.messageCount / this.options.messagesPerPod
-        );
+      if (
+        !this.lastScaleTime ||
+        now - this.lastScaleTime > this.options.scaleWait
+      ) {
+        const newReplicas = this.calculateReplicas();
 
-        if (newReplicas > this.options.maxPods) {
-          newReplicas = this.options.maxPods;
+        if (newReplicas !== this.replicasCount) {
+          const deployment = await this.getDeployment();
+
+          if (deployment) {
+            if (deployment.spec.replicas !== newReplicas) {
+              try {
+                this.isScaling = true;
+                const oldReplicas = deployment.spec.replicas;
+
+                console.log(
+                  `[scale] Trying to scale from ${oldReplicas} to ${newReplicas}`
+                );
+
+                deployment.spec.replicas = newReplicas;
+                await this.updateDeployment(deployment);
+                this.replicasCount = newReplicas;
+                this.lastScaleTime = new Date().getTime();
+
+                console.log(
+                  `[scale] Scaled from ${oldReplicas} to ${newReplicas}`
+                );
+              } finally {
+                this.isScaling = false;
+              }
+            }
+          }
         }
-
-        console.log('Scaling up');
-        deployment.spec.replicas = newReplicas;
-        await this.updateDeployment(deployment);
-
-        this.replicasCount = newReplicas;
-        this.lastScaleTime = new Date().getTime();
-      } else if (deployment.spec.replicas > this.options.maxPods) {
-        await this.scaleDown();
       } else {
-        console.log('Max pods reached');
+        console.log(`[scale] Skipping scale check due to scaleWait time`);
       }
+    } else {
+      console.log(
+        `[scale] Skipping scale check due to scale already in progress`
+      );
     }
   }
 
-  private async scaleDown(): Promise<void> {
-    const deployment = await this.getDeployment();
+  /**
+   * Calculate the new replica count to be used based on the
+   * number of messages and messages per pod
+   *
+   * @returns New replica count to be checked before scaling
+   */
+  private calculateReplicasByMessages(): number {
+    return Math.ceil(this.messageCount / this.options.messagesPerPod);
+  }
 
-    if (deployment) {
-      if (deployment.spec.replicas > this.options.minPods) {
-        let newReplicas = Math.ceil(
-          this.messageCount / this.options.messagesPerPod
-        );
+  /**
+   * Calculate the final replica count to be used by the scale function
+   * Decides whether the existing replica count is sufficient based on
+   * min/max pod configuration options.
+   *
+   * @returns The new replica count to be used by scale if needed
+   */
+  private calculateReplicas(): number {
+    const newReplicas = this.calculateReplicasByMessages();
 
-        if (newReplicas < this.options.minPods) {
-          newReplicas = this.options.minPods;
-        }
-
-        console.log('Scaling down');
-        deployment.spec.replicas = newReplicas;
-        await this.updateDeployment(deployment);
-
-        this.replicasCount = newReplicas;
-        this.lastScaleTime = new Date().getTime();
-      } else if (deployment.spec.replicas < this.options.minPods) {
-        await this.scaleUp();
+    if (newReplicas !== this.replicasCount) {
+      if (
+        newReplicas >= this.options.minPods ||
+        newReplicas <= this.options.maxPods
+      ) {
+        console.log(`[getScaleCount] Returning newReplicas: ${newReplicas}`);
+        return newReplicas;
       } else {
-        console.log('Min pods reached');
+        console.log(
+          `[getScaleCount] Reached min/max pods. Returning replicasCount - replicasCount ${this.replicasCount} - newReplicas ${newReplicas} - minPods ${this.options.minPods} - maxPods ${this.options.maxPods}`
+        );
+        return this.replicasCount;
       }
+    } else {
+      console.log(
+        `[getScaleCount] Unchanged, returning replicasCount: ${this.replicasCount}`
+      );
+      return this.replicasCount;
     }
   }
 
+  /**
+   * Get the configured deployment's current state
+   *
+   * @returns The current state of the configure deployment
+   */
   private async getDeployment(): Promise<k8s.V1Deployment> {
     try {
-      console.log('Getting deployment');
-      const deploymentResponse = await this.k8sApi.readNamespacedDeployment(
-        this.options.k8sDeployment,
-        this.options.k8sNamespace
+      const deployment = await this.k8sApi
+        .readNamespacedDeployment(
+          this.options.k8sDeployment,
+          this.options.k8sNamespace
+        )
+        .then((response) => response.body);
+      console.log(
+        `[getDeployment] Got deployment: ${JSON.stringify(deployment)}`
       );
-      return deploymentResponse.body;
+      return deployment;
     } catch (err) {
+      console.error(
+        `[getDeployment] Error getting deployment: ${JSON.stringify(err)}`
+      );
       return null;
     }
   }
 
+  /**
+   * Replace the existing deployment with the mutated version containing
+   * the updated replicas count
+   *
+   * @param deployment The mutated deployment to replace the old one
+   */
   private async updateDeployment(deployment: k8s.V1Deployment): Promise<void> {
     try {
-      console.log('Updating deployment');
       const updateResponse = await this.k8sApi.replaceNamespacedDeployment(
         this.options.k8sDeployment,
         this.options.k8sNamespace,
         deployment
       );
       console.log(
-        `Deployment updated. Response: ${JSON.stringify(updateResponse)}`
+        `[updateDeployment] Deployment updated. Response: ${JSON.stringify(
+          updateResponse
+        )}`
       );
     } catch (err) {
-      console.error(`Failed to update deployment: ${JSON.stringify(err)}`);
+      console.error(
+        `[updateDeployment] Failed to update deployment: ${JSON.stringify(err)}`
+      );
     }
   }
 }

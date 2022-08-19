@@ -1,10 +1,11 @@
 export interface AutoScalerOptions {
-  queueUrl: string;
+  deploymentPollPeriod: number;
   k8sDeployment: string;
   k8sNamespace: string;
-  pollPeriod: number;
-  scaleWait: number;
-  messagesPerPod: number;
   maxPods: number;
+  messagesPerPod: number;
   minPods: number;
+  pollPeriod: number;
+  queueUrl: string;
+  scaleWait: number;
 }

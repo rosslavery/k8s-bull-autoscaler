@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import commander from 'commander';
+import { program } from 'commander';
 
 import { Autoscaler } from './lib/autoscaler';
 import { AutoScalerOptions } from './types/options.interface';
@@ -9,7 +9,7 @@ const commanderParseInt = (value: string) => {
   return parseInt(value, 10);
 };
 
-const program = commander
+const cli = program
   .requiredOption('--queue-url <url>', 'Queue Count URL')
   .requiredOption('--k8s-deployment <deployment>', 'Kubernetes Deployment Name')
   .requiredOption(
@@ -19,9 +19,15 @@ const program = commander
   )
   .option(
     '--poll-period <time>',
-    'How often to poll the queue',
+    'How often to poll the queue for the message count',
     commanderParseInt,
-    10000
+    20000
+  )
+  .option(
+    '--deployment-poll-period <time>',
+    'How often to poll the configured deployment for replicas',
+    commanderParseInt,
+    60000
   )
   .option(
     '--scale-wait <time>',
@@ -48,6 +54,6 @@ const program = commander
     1
   );
 
-const options = program.parse(process.argv).opts() as AutoScalerOptions;
+const options = cli.parse(process.argv).opts<AutoScalerOptions>();
 
 new Autoscaler(options).init();
