@@ -152,14 +152,28 @@ export class Autoscaler {
 
     if (newReplicas !== this.replicasCount) {
       if (
-        newReplicas >= this.options.minPods ||
+        newReplicas >= this.options.minPods &&
         newReplicas <= this.options.maxPods
       ) {
         console.log(`[getScaleCount] Returning newReplicas: ${newReplicas}`);
         return newReplicas;
       } else {
+        if (newReplicas <= this.options.minPods) {
+          console.log(
+            `[getScaleCount] Reached min pods. Returning ${this.options.minPods}`
+          );
+          return this.options.minPods;
+        }
+
+        if (newReplicas >= this.options.maxPods) {
+          console.log(
+            `[getScaleCount] Reached max pods. Returning ${this.options.maxPods}`
+          );
+          return this.options.maxPods;
+        }
+
         console.log(
-          `[getScaleCount] Reached min/max pods. Returning replicasCount - replicasCount ${this.replicasCount} - newReplicas ${newReplicas} - minPods ${this.options.minPods} - maxPods ${this.options.maxPods}`
+          `[getScaleCount] Unknown replica calculation, returning current replicas: ${this.replicasCount}`
         );
         return this.replicasCount;
       }
